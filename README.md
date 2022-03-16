@@ -2,6 +2,8 @@
 滴水逆向三期PE部分代码
 前面一小部分代码参考自https://github.com/123yonghu/-
 
+**注：需要用x86编译**
+
 有些基本函数偷懒没写emmm，也修改了部分，例如
 
 ImageBufferToFileBuffer函数，跳过.textbss节，可以修改vs编译出来的程序注入shellcode
