@@ -16,6 +16,7 @@ DWORD RVAtoFOA(DWORD RVA, LPVOID pImageBuffer);//内存地址转文件地址
 void showEXPORT_DIRECTORY(LPVOID pFileBuffer);//展示函数导出表内容
 void showRELOCATION(LPVOID pFileBuffer);//展示重定向表内容
 void showBOUND_IMPORT_DESCRIPTOR(LPVOID pFileBuffer);//展示绑定导入表
+LPVOID injectDESCRIPTOR(LPVOID pFileBuffer);//绑定导入表注入
 /*
 导出表和重定位表迁移测试
 */
@@ -24,9 +25,9 @@ void showDESCRIPTOR(LPVOID pFileBuffer);//展示导出表
 
 int main()
 {
-	const char* newFile = "Dll1G.dll";
-	//const char* fileName = "1.exe";
-	const char* fileName = "calc.exe";
+	const char* newFile = "2.exe";
+	const char* fileName = "1.exe";
+	//const char* fileName = "calc.exe";
 	LPVOID pFileBuffer = NULL;
 	showPEheader(fileName);
 	DWORD FileSize = LoadFile(fileName, &pFileBuffer);
@@ -54,15 +55,22 @@ int main()
 	// 重定向表展示
 	//showRELOCATION(pFileBuffer);
 	//展示导入表
-	//showDESCRIPTOR(pFileBuffer);
+
+	showDESCRIPTOR(pFileBuffer);
 	//展示绑定导入表
-	showBOUND_IMPORT_DESCRIPTOR(pFileBuffer);
+	//showBOUND_IMPORT_DESCRIPTOR(pFileBuffer);
 	
 	//LPVOID changeBuffer = changeimagebuffer(pImageBuffer);
 
 	//LPVOID pNewFileBuffer = ImageBufferToFileBuffer(changeBuffer);
+	//绑定导入表迁移
+	
+	LPVOID newsetion = NEWSetion(pImageBuffer);
+	LPVOID pNewFileBuffer = ImageBufferToFileBuffer(newsetion);
+	pNewFileBuffer = injectDESCRIPTOR(pNewFileBuffer);
 
-	//SaveFile(pNewFileBuffer, newFile, FileSize);
+	SaveFile(pNewFileBuffer, newFile, FileSizeget(pNewFileBuffer));
+	
 	//SaveFile(pImageBuffer, newFile,FileSize);
 	free(pFileBuffer);
 	//free(pImageBuffer);

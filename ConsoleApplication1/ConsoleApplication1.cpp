@@ -875,7 +875,7 @@ LPVOID removeDIRECTORY(LPVOID  pFileBuffer) {
 
 		//修复AddressOfNames
 		DWORD namestartyz = (DWORD)start - (DWORD)pFileBuffer;
-		//计算nameaddr的rva
+		//计算nameaddr的rva ，因为都是放最后一个节表，所以直接用最后一个节的内存地址算
 		DWORD addrofnamerva = (DWORD)pLaswSectionHeaderBase->VirtualAddress + (DWORD)start - (DWORD)starttest;
 		*tureAddressOfNames2 = addrofnamerva;
 		start = (LPVOID)((DWORD)start + strlen(Nameaddr));
@@ -1036,4 +1036,113 @@ void showBOUND_IMPORT_DESCRIPTOR(LPVOID pFileBuffer)
 
 	
 	
+}
+
+LPVOID injectDESCRIPTOR(LPVOID pFileBuffer)
+{
+	PIMAGE_IMPORT_DESCRIPTOR pDescriptor = NULL;
+	PIMAGE_NT_HEADERS pNtHeaders = NULL;
+	PIMAGE_IMPORT_BY_NAME pImportbyname = NULL;
+	PIMAGE_IMPORT_DESCRIPTOR pDescriptorture = NULL;
+	PIMAGE_IMPORT_BY_NAME namefuction = NULL;
+
+
+
+
+	pNtHeaders = FileToNtHeader(pFileBuffer);
+
+
+	//第一步
+	//根据目录项得到导入表的信息，得到Size:导入表的总大小
+	pNtHeaders = FileToNtHeader(pFileBuffer);
+	DWORD sizeofDescriper = pNtHeaders->OptionalHeader.DataDirectory[1].Size;
+	//定位导入表
+	pDescriptor = (PIMAGE_IMPORT_DESCRIPTOR)pNtHeaders->OptionalHeader.DataDirectory[1].VirtualAddress;
+	//此时在内存中的地址要加pFileBuffer
+	pDescriptorture = PIMAGE_IMPORT_DESCRIPTOR(RVAtoFOA((DWORD)pDescriptor, pFileBuffer) + (DWORD)pFileBuffer);
+	//得到OriginalFirstThunk，FirstThunk的地址
+	//OriginalFirstThunk
+	//DWORD* startThunk = (DWORD*)(RVAtoFOA((DWORD)pDescriptorture->OriginalFirstThunk, pFileBuffer) + (DWORD)pFileBuffer);
+	//FirstThunk
+	//DWORD* startFirstThunk = (DWORD*)(RVAtoFOA((DWORD)pDescriptorture->FirstThunk, pFileBuffer) + (DWORD)pFileBuffer);
+
+	/*
+		新增一个导入表需要的空间：			
+				
+	A:20字节			
+				
+	B:16字节			
+				
+	C:取决于DLL名串的长度+1			
+				
+	D:取决于函数名的长度+1+2			
+
+	*/
+	PIMAGE_SECTION_HEADER pSectionHeaderBase = NULL;
+	LPVOID start = NULL;
+	PIMAGE_EXPORT_DIRECTORY exportDIRECTORY = NULL;
+	pNtHeaders = FileToNtHeader(pFileBuffer);
+	pSectionHeaderBase = LocateSectionBase(pFileBuffer);
+	//找最后一个节
+	//这里直接新创建一个节了就不判断大小了
+
+	PIMAGE_SECTION_HEADER pLaswSectionHeaderBase = PIMAGE_SECTION_HEADER((BYTE*)pSectionHeaderBase + (DWORD)(0x28 * (pNtHeaders->FileHeader.NumberOfSections - 1)));
+	//找最后一个节的开始地址
+	start = (LPVOID)(pLaswSectionHeaderBase->PointerToRawData + (DWORD)pFileBuffer);
+	LPVOID starttest = (LPVOID)(pLaswSectionHeaderBase->PointerToRawData + (DWORD)pFileBuffer);//记录内存空间中复制开始的地址
+
+	//导入表copy到空白区
+	memcpy(start, pDescriptorture, sizeofDescriper);
+	start = (LPVOID)((DWORD)start + sizeofDescriper);//这个是最后一个导入表+1个空的导入表的位置
+	start = (LPVOID)((DWORD)start - 0x14);
+
+	//追加一个导入表
+	PIMAGE_IMPORT_DESCRIPTOR pNewdescripitor = (PIMAGE_IMPORT_DESCRIPTOR)start;
+	memcpy(start,starttest,0x14);
+	start = (LPVOID)((DWORD)start + 2*0x14);
+	//start = (DWORD*)start + 1;
+
+
+	//追加8个字节的INT表和IAT表
+	DWORD* startINT = (DWORD*)start;
+	pNewdescripitor->OriginalFirstThunk = (DWORD)pLaswSectionHeaderBase->VirtualAddress + (DWORD)start - (DWORD)starttest;
+	start = startINT + 2;
+	//追加8字节的IAT表
+	DWORD* startIAT = (DWORD*)start;
+	pNewdescripitor->FirstThunk = (DWORD)pLaswSectionHeaderBase->VirtualAddress + (DWORD)start - (DWORD)starttest;
+	start = startIAT + 2;
+
+	//追加IMAGE_IMPORT_BY_NAME，因为本来创建节就为0，所以跳过前2个字节存储函数名字
+	PIMAGE_IMPORT_BY_NAME Importbyname = (PIMAGE_IMPORT_BY_NAME)start;
+	DWORD ImportbynameRva = (DWORD)pLaswSectionHeaderBase->VirtualAddress + (DWORD)start - (DWORD)starttest;
+	//赋值给int和iat表
+	*startINT = ImportbynameRva;
+	*startIAT = ImportbynameRva;
+	//存储函数名字
+	memcpy(Importbyname->Name, "ExportFunction", sizeof("ExportFunction"));
+	
+	start = (LPVOID)((DWORD)start + 2 + sizeof("ExportFunction") );//\0字符串结尾
+
+	const char* dllname =NULL;
+	dllname = "InjectDll.dll";
+
+	//复制dll名字
+	PCHAR dllName = (PCHAR)start;
+	memcpy(dllName, "InjectDll.dll", sizeof("InjectDll.dll"));
+	DWORD dllnameRva = (DWORD)pLaswSectionHeaderBase->VirtualAddress + (DWORD)start - (DWORD)starttest;
+	start = (LPVOID)((DWORD)start  + sizeof("InjectDll.dll") );//+1是\0字符串结尾
+
+
+	//把这个rva赋值给导入表的name属性
+	pNewdescripitor->Name = dllnameRva;
+
+	//修正IMAGE_DATA_DIRECTORY结构的VirtualAddress和Size
+	pNtHeaders->OptionalHeader.DataDirectory[1].VirtualAddress = (DWORD)starttest-(DWORD)pFileBuffer;
+	pNtHeaders->OptionalHeader.DataDirectory[1].Size = sizeofDescriper + sizeof(_IMAGE_EXPORT_DIRECTORY);
+
+	DWORD sizeofnewDescriptor = 20 + 16;
+
+
+	//free(pImageBuffer);
+	return pFileBuffer;
 }
